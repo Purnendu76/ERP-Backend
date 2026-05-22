@@ -2,14 +2,36 @@ import type { Request, Response } from 'express';
 import { db } from '../db/index.js';
 import { invoices, invoiceItems } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { redisClient } from '../config/redis.js';
 
 export const getInvoices = async (req: Request, res: Response) => {
   try {
+    // Attempt to get from Redis cache
+    try {
+      const cachedInvoices = await redisClient.get("invoices:all");
+      if (cachedInvoices) {
+        res.status(200).json(JSON.parse(cachedInvoices));
+        return;
+      }
+    } catch (redisError) {
+      console.error("Redis error in getInvoices:", redisError);
+    }
+
     const allInvoices = await db.query.invoices.findMany({
       with: {
         items: true,
       },
     });
+
+    // Save to Redis cache
+    try {
+      await redisClient.set("invoices:all", JSON.stringify(allInvoices), {
+        EX: 3600, // 1 hour TTL
+      });
+    } catch (redisError) {
+      console.error("Redis save error in getInvoices:", redisError);
+    }
+
     res.status(200).json(allInvoices);
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Internal Server Error' });
@@ -52,6 +74,13 @@ export const createInvoice = async (req: Request, res: Response) => {
         },
       });
     });
+
+    // Invalidate Redis cache
+    try {
+      await redisClient.del("invoices:all");
+    } catch (redisError) {
+      console.error("Redis clear error in createInvoice:", redisError);
+    }
 
     res.status(201).json(newInvoice);
   } catch (error) {
@@ -104,6 +133,13 @@ export const updateInvoice = async (req: Request, res: Response) => {
       });
     });
 
+    // Invalidate Redis cache
+    try {
+      await redisClient.del("invoices:all");
+    } catch (redisError) {
+      console.error("Redis clear error in updateInvoice:", redisError);
+    }
+
     res.status(200).json(updatedInvoice);
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Internal Server Error' });
@@ -114,6 +150,14 @@ export const deleteInvoice = async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
     await db.delete(invoices).where(eq(invoices.id, id)); // CASCADE handles deleting items!
+
+    // Invalidate Redis cache
+    try {
+      await redisClient.del("invoices:all");
+    } catch (redisError) {
+      console.error("Redis clear error in deleteInvoice:", redisError);
+    }
+
     res.status(200).json({ message: 'Invoice deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Internal Server Error' });

@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import apiRouter from "./routes/index.js";
 import { db } from "./db/index.js";
 import { sql } from "drizzle-orm";
+import { connectRedis } from "./config/redis.js";
 
 dotenv.config();
 
@@ -20,14 +21,26 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, async () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    
+async function startServer() {
     try {
-        // Test database connection
-        await db.execute(sql`SELECT 1`);
-        console.log("🔌 Database connected successfully! 💾 ✨");
-    } catch (err) {
-        console.error("❌ Database connection failed:", err);
+        // Connect to Redis
+        await connectRedis();
+
+        app.listen(PORT, async () => {
+            console.log(`🚀 Server running on port ${PORT}`);
+            
+            try {
+                // Test database connection
+                await db.execute(sql`SELECT 1`);
+                console.log("🔌 Database connected successfully! 💾 ✨");
+            } catch (err) {
+                console.error("❌ Database connection failed:", err);
+            }
+        });
+    } catch (error) {
+        console.error("❌ Server startup failed:", error);
+        process.exit(1);
     }
-});
+}
+
+startServer();

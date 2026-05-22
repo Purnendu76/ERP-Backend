@@ -4,6 +4,7 @@ import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { generateToken } from '../utils/jwt.js';
+import { redisClient } from '../config/redis.js';
 
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -143,6 +144,35 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
     const id = req.params.id as string;
     await db.delete(users).where(eq(users.id, id));
     res.status(200).json({ message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Internal Server Error' });
+  }
+};
+
+export const logoutUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(400).json({ error: 'Access token required' });
+      return;
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      res.status(400).json({ error: 'Invalid token format' });
+      return;
+    }
+
+    // Set token to blacklist in Redis for 2 hours (matching standard JWT expiry)
+    try {
+      await redisClient.set(`blacklist:${token}`, "true", {
+        EX: 2 * 60 * 60, // 2 hours TTL in seconds
+      });
+    } catch (redisError) {
+      console.error("Redis blacklist save error during logout:", redisError);
+    }
+
+    res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Internal Server Error' });
   }

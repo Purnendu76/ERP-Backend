@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/jwt.js';
+import { redisClient } from '../config/redis.js';
 
 // Extend Express request interface to attach user context
 declare global {
@@ -27,6 +28,17 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     return;
   }
 
+  // Check Redis blacklist
+  try {
+    const isBlacklisted = await redisClient.get(`blacklist:${token}`);
+    if (isBlacklisted) {
+      res.status(401).json({ error: 'Token is no longer valid' });
+      return;
+    }
+  } catch (redisError) {
+    console.error("Redis blacklist check error:", redisError);
+  }
+
   const payload = await verifyToken(token);
   if (!payload) {
     res.status(401).json({ error: 'Invalid or expired access token' });
@@ -51,4 +63,27 @@ export const authorize = (roles: string[]) => {
 
     next();
   };
+};
+
+export const loginRateLimiter = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const ip = req.ip || req.socket.remoteAddress || "unknown-ip";
+  const key = `rate-limit:login:${ip}`;
+
+  try {
+    const attempts = await redisClient.incr(key);
+    if (attempts === 1) {
+      // First attempt in this window, set TTL of 15 minutes (900 seconds)
+      await redisClient.expire(key, 900);
+    }
+
+    if (attempts > 5) {
+      res.status(429).json({ error: 'Too many login attempts. Please try again after 15 minutes.' });
+      return;
+    }
+  } catch (redisError) {
+    // Fail-open: If Redis is down, log the error but allow login to function
+    console.error("Redis rate limiter error:", redisError);
+  }
+
+  next();
 };
