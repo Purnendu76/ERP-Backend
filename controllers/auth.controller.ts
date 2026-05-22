@@ -43,6 +43,34 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     // Remove password from returned user object
     const { password: _, ...userWithoutPassword } = newUser;
 
+    // Send welcome email via Notification Server in the background
+    const notificationServerUrl = process.env.NOTIFICATION_SERVER_URL || "http://localhost:5001";
+    const notificationApiKey = process.env.NOTIFICATION_API_KEY || "erp-demo-secret-key";
+
+    fetch(`${notificationServerUrl}/api/notifications/new-user`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": notificationApiKey,
+      },
+      body: JSON.stringify({
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        temporaryPassword: password, // Send the plain password supplied by admin
+      }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          console.error("Notification server returned non-OK status:", response.status);
+        } else {
+          console.log("Welcome email notification triggered successfully! 📩");
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to trigger welcome email on notification server:", err);
+      });
+
     res.status(201).json({ message: 'User registered successfully', user: userWithoutPassword });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : 'Internal Server Error' });
