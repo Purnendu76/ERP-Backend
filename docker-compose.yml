@@ -42,6 +42,17 @@ services:
       timeout: 5s
       retries: 5
 
+  notification_server:
+    build:
+      context: ../notification-server
+      dockerfile: Dockerfile
+    container_name: erp_notification_server
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    env_file:
+      - ../notification-server/.env
+
 volumes:
   postgres_data:
   redis_data:
