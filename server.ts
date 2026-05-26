@@ -5,6 +5,7 @@ import apiRouter from "./routes/index.js";
 import { db } from "./db/index.js";
 import { sql } from "drizzle-orm";
 import { connectRedis } from "./config/redis.js";
+import uploadRoutes from "./routes/upload.routes.js";
 
 dotenv.config();
 
@@ -14,10 +15,12 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api", apiRouter);
+app.use("/api/uploads", uploadRoutes)
 
 app.get("/", (req, res) => {
     res.send("TypeScript Backend Running 🚀");
 });
+
 
 const PORT = process.env.PORT || 5000;
 

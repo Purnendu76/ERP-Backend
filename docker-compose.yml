@@ -1,6 +1,7 @@
 name: erp-management
 
 services:
+  # PostgreSQL Database
   postgres_db:
     image: postgres:16-alpine
     container_name: erp_postgres
@@ -23,6 +24,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis Cache
   redis_cache:
     image: redis:7-alpine
     container_name: erp_redis
@@ -42,6 +44,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Notification Server
   notification_server:
     build:
       context: ../notification-server
