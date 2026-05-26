@@ -6,6 +6,8 @@ import { db } from "./db/index.js";
 import { sql } from "drizzle-orm";
 import { connectRedis } from "./config/redis.js";
 import uploadRoutes from "./routes/upload.routes.js";
+import { notFoundHandler } from "./middleware/notFound.middleware.js";
+import { errorHandler } from "./middleware/error.middleware.js";
 
 dotenv.config();
 
@@ -45,5 +47,8 @@ async function startServer() {
         process.exit(1);
     }
 }
+// hengeling the errors
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 startServer();

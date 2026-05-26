@@ -39,7 +39,8 @@ router.post("/file", upload.single("file"), async (req, res) => {
       })
     );
 
-    const publicUrl = `https://${bucketName}.s3.${process.env.B2_REGION}.backblazeb2.com/${fileKey}`;
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const publicUrl = `${baseUrl}/api/uploads/file-view?key=${fileKey}`;
 
     return res.status(201).json({
       success: true,
@@ -59,6 +60,42 @@ router.post("/file", upload.single("file"), async (req, res) => {
       success: false,
       message: "Failed to upload file",
     });
+  }
+});
+
+router.get("/file-view", async (req, res) => {
+  try {
+    const key = String(req.query.key || "");
+
+    if (!key) {
+      return res.status(400).json({
+        success: false,
+        message: "File key is required",
+      });
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
+
+    const b2Response = await b2Client.send(command);
+
+    res.setHeader("Content-Type", b2Response.ContentType || "application/octet-stream");
+    if (b2Response.ContentLength) {
+      res.setHeader("Content-Length", b2Response.ContentLength);
+    }
+    
+    if (b2Response.CacheControl) {
+      res.setHeader("Cache-Control", b2Response.CacheControl);
+    } else {
+      res.setHeader("Cache-Control", "public, max-age=31536000"); // cache for 1 year
+    }
+
+    (b2Response.Body as any).pipe(res);
+  } catch (error) {
+    console.error("B2 file view error:", error);
+    return res.status(404).send("File not found");
   }
 });
 
