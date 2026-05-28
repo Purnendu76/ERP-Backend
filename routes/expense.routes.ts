@@ -6,7 +6,7 @@ const router = Router();
 
 router.get('/', authenticate, getExpenses);
 router.post('/', authenticate, createExpense);
-router.put('/:id', authenticate, authorize(['Admin', 'Manager']), updateExpense);
+router.put('/:id', authenticate, authorize(['Admin', 'Manager', 'Staff']), updateExpense);
 router.delete('/:id', authenticate, authorize(['Admin']), deleteExpense);
 
 export default router;

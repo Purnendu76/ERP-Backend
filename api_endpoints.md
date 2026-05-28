@@ -87,6 +87,18 @@ This file contains the complete specification of all API endpoints available on 
   }
   ```
 
+### 📌 1.6 User Logout
+* **Method**: `POST`
+* **Path**: `/api/auth/logout`
+* **Access**: **Protected** (All Roles: `Admin`, `Manager`, `Staff`)
+* **Description**: Securely logs out the user and invalidates the session JWT token in the backend cache (Redis blacklist database) with a TTL of 2 hours.
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "message": "Logged out successfully"
+  }
+  ```
+
 ---
 
 ## 📦 2. Product Management (`/products`)
@@ -286,3 +298,178 @@ This file contains the complete specification of all API endpoints available on 
 * **Method**: `DELETE`
 * **Path**: `/api/audit-logs`
 * **Access**: **Protected** (Requires `Admin` role only)
+
+---
+
+## 📊 6. Dashboard Metrics (`/dashboard`)
+
+### 📌 6.1 Get Dashboard Data
+* **Method**: `GET`
+* **Path**: `/api/dashboard`
+* **Access**: **Protected** (All Roles: `Admin`, `Manager`, `Staff`)
+* **Description**: Concurrently retrieves aggregated ERP status datasets including all products, all expenses, all invoices (with nested child items), all sanitized users (password hashes stripped), and all audit trail entries for quick dashboard reporting.
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "products": [
+      {
+        "id": "c62cfbe3-29a3-4876-b633-4f9db5d7c35f",
+        "name": "Wireless Mouse",
+        "sku": "PROD-MSE-001",
+        "category": "Electronics",
+        "price": "29.99",
+        "stock": 100,
+        "status": "In Stock",
+        "image": null,
+        "createdAt": "2026-05-28T12:00:00.000Z",
+        "updatedAt": "2026-05-28T12:00:00.000Z"
+      }
+    ],
+    "expenses": [],
+    "invoices": [],
+    "users": [
+      {
+        "id": "1e15f580-f1ce-4b3a-8d4f-08e619b8bf28",
+        "name": "System Admin",
+        "email": "admin@example.com",
+        "role": "Admin",
+        "status": "Active",
+        "photo": null,
+        "createdAt": "2026-05-21T00:25:00.625Z",
+        "updatedAt": "2026-05-21T00:25:00.625Z"
+      }
+    ],
+    "auditLogs": []
+  }
+  ```
+
+---
+
+## ☁️ 7. Cloud Storage & File Uploads (`/uploads`)
+
+These endpoints facilitate cloud file storage management integrating with Backblaze B2 Object Storage (compatible with S3 API).
+
+### 📌 7.1 Upload File
+* **Method**: `POST`
+* **Path**: `/api/uploads/file`
+* **Access**: **Public** (No Token Required)
+* **Description**: Uploads a single file to a specific bucket directory. Parses binary payload via memory-storage multer middleware.
+* **Content-Type**: `multipart/form-data`
+* **Request Body (Form Data)**:
+  * `file`: Binary file payload (Required).
+  * `folder`: Subdirectory naming within the bucket. Default is `"uploads"` (Optional).
+* **Success Response (`201 Created`)**:
+  ```json
+  {
+    "success": true,
+    "message": "File uploaded successfully",
+    "data": {
+      "key": "uploads/1716912345678-invoice_receipt.pdf",
+      "url": "http://localhost:5000/api/uploads/file-view?key=uploads/1716912345678-invoice_receipt.pdf",
+      "fileName": "invoice_receipt.pdf",
+      "mimeType": "application/pdf",
+      "size": 45892
+    }
+  }
+  ```
+
+### 📌 7.2 View/Stream File
+* **Method**: `GET`
+* **Path**: `/api/uploads/file-view`
+* **Access**: **Public** (No Token Required)
+* **Description**: Streams the stored binary resource directly from the cloud bucket to client connection with preserved `Content-Type` headers and long-term caching header `Cache-Control: public, max-age=31536000` (1 year).
+* **Query Parameters**:
+  * `key`: Cloud storage key path to retrieve (Required).
+* **Success Response (`200 OK`)**:
+  * Returns direct binary data stream of the requested file.
+
+### 📌 7.3 Get Pre-signed URL
+* **Method**: `GET`
+* **Path**: `/api/uploads/file-url`
+* **Access**: **Public** (No Token Required)
+* **Description**: Generates a secure, temporary pre-signed URL to interact with the file directly. Expiration set to 10 minutes.
+* **Query Parameters**:
+  * `key`: Cloud storage key path (Required).
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "url": "https://f002.backblazeb2.com/file/my-bucket/uploads/1716912345678-invoice_receipt.pdf?X-Amz-Algorithm=..."
+  }
+  ```
+
+### 📌 7.4 Delete File
+* **Method**: `DELETE`
+* **Path**: `/api/uploads/file`
+* **Access**: **Public** (No Token Required)
+* **Description**: Removes the target file asset from the cloud bucket permanently.
+* **Request Body (JSON)**:
+  ```json
+  {
+    "key": "uploads/1716912345678-invoice_receipt.pdf"
+  }
+  ```
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "message": "File deleted successfully"
+  }
+  ```
+
+---
+
+## 📧 8. Notification Service (`ERP-Notification-Server`)
+
+The ERP Notification Server operates as a dedicated microservice managing system emails, transaction notifications, and SMTP configurations.
+
+* **Base URL**: `http://localhost:5001`
+* **Security**: Protected endpoints require a valid API secret passed via the `x-api-key` header:
+  ```http
+  x-api-key: <your_notification_api_key>
+  ```
+
+### 📌 8.1 Health Check
+* **Method**: `GET`
+* **Path**: `/health`
+* **Access**: **Public** (No API Key Required)
+* **Description**: Returns the current execution status of the notification microservice.
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "message": "Notification server is running"
+  }
+  ```
+
+### 📌 8.2 Send New User Welcome Email
+* **Method**: `POST`
+* **Path**: `/api/notifications/new-user`
+* **Access**: **Protected** (Requires Valid `x-api-key` Header)
+* **Description**: Triggered asynchronously by the primary ERP backend upon successful user registration. Dynamically parses and delivers a styled HTML onboarding email containing the user's name, email, role, and temporary password (if generated).
+* **Request Headers**:
+  * `x-api-key`: Must match the configured notification server secret (Required).
+* **Request Body (JSON)**:
+  ```json
+  {
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "role": "Staff",
+    "temporaryPassword": "userpass123"
+  }
+  ```
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "message": "Welcome email sent successfully"
+  }
+  ```
+* **Error Response (`401 Unauthorized`)**:
+  ```json
+  {
+    "success": false,
+    "message": "Unauthorized notification request"
+  }
+  ```
+

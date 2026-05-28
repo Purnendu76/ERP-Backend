@@ -5,8 +5,8 @@ import { authenticate, authorize } from '../middleware/auth.middleware.js';
 const router = Router();
 
 router.get('/', authenticate, getProducts);
-router.post('/', authenticate, authorize(['Admin', 'Manager']), createProduct);
-router.put('/:id', authenticate, authorize(['Admin', 'Manager']), updateProduct);
+router.post('/', authenticate, authorize(['Admin', 'Manager', 'Staff']), createProduct);
+router.put('/:id', authenticate, authorize(['Admin', 'Manager', 'Staff']), updateProduct);
 router.delete('/:id', authenticate, authorize(['Admin']), deleteProduct);
 
 export default router;

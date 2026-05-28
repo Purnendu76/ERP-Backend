@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, integer, doublePrecision, timestamp } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+import { users } from './users.js';
 
 export const invoices = pgTable('invoices', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -13,6 +14,7 @@ export const invoices = pgTable('invoices', {
   tax: doublePrecision('tax').notNull(),
   total: doublePrecision('total').notNull(),
   status: text('status').default('Pending').notNull(), // 'Paid' | 'Pending' | 'Overdue' | 'Cancelled'
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

@@ -8,7 +8,7 @@ export const generateToken = async (payload: { id: string; email: string; role: 
   return await new jose.SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('2h')
+    .setExpirationTime('1d')
     .sign(secret);
 };
 

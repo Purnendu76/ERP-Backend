@@ -7,9 +7,12 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { AppError } from '../utils/AppError.js';
 
 export const getInvoices = asyncHandler(async (req: Request, res: Response) => {
+  const user = req.user!;
+  const cacheKey = user.role === "Admin" ? "invoices:all:admin" : `invoices:all:${user.id}`;
+
   // Attempt to get from Redis cache
   try {
-    const cachedInvoices = await redisClient.get("invoices:all");
+    const cachedInvoices = await redisClient.get(cacheKey);
     if (cachedInvoices) {
       res.status(200).json(JSON.parse(cachedInvoices));
       return;
@@ -18,26 +21,37 @@ export const getInvoices = asyncHandler(async (req: Request, res: Response) => {
     console.error("Redis error in getInvoices:", redisError);
   }
 
-  const allInvoices = await db.query.invoices.findMany({
-    with: {
-      items: true,
-    },
-  });
+  let queriedInvoices;
+  if (user.role === "Admin") {
+    queriedInvoices = await db.query.invoices.findMany({
+      with: {
+        items: true,
+      },
+    });
+  } else {
+    queriedInvoices = await db.query.invoices.findMany({
+      where: eq(invoices.createdBy, user.id),
+      with: {
+        items: true,
+      },
+    });
+  }
 
   // Save to Redis cache
   try {
-    await redisClient.set("invoices:all", JSON.stringify(allInvoices), {
+    await redisClient.set(cacheKey, JSON.stringify(queriedInvoices), {
       EX: 3600, // 1 hour TTL
     });
   } catch (redisError) {
     console.error("Redis save error in getInvoices:", redisError);
   }
 
-  res.status(200).json(allInvoices);
+  res.status(200).json(queriedInvoices);
 });
 
 export const createInvoice = asyncHandler(async (req: Request, res: Response) => {
   const { invoiceNumber, customerName, customerEmail, invoiceDate, dueDate, taxRate, subtotal, tax, total, status, items } = req.body;
+  const user = req.user!;
 
   if (!invoiceNumber || !customerName || !customerEmail || !invoiceDate || !dueDate || subtotal === undefined || total === undefined) {
     throw AppError.badRequest('Required invoice fields are missing', 'MISSING_FIELDS');
@@ -55,6 +69,7 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
       tax,
       total,
       status: status || 'Draft',
+      createdBy: user.id,
     }).returning();
 
     if (items && items.length > 0) {
@@ -78,7 +93,8 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
 
   // Invalidate Redis cache
   try {
-    await redisClient.del("invoices:all");
+    await redisClient.del("invoices:all:admin");
+    await redisClient.del(`invoices:all:${user.id}`);
   } catch (redisError) {
     console.error("Redis clear error in createInvoice:", redisError);
   }
@@ -89,10 +105,16 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
 export const updateInvoice = asyncHandler(async (req: Request, res: Response) => {
   const id = req.params.id as string;
   const { invoiceNumber, customerName, customerEmail, invoiceDate, dueDate, taxRate, subtotal, tax, total, status, items } = req.body;
+  const user = req.user!;
 
   const [existing] = await db.select().from(invoices).where(eq(invoices.id, id));
   if (!existing) {
     throw AppError.notFound(`Invoice with ID ${id} not found`, 'INVOICE_NOT_FOUND');
+  }
+
+  // Verify ownership if not Admin
+  if (user.role !== "Admin" && existing.createdBy !== user.id) {
+    throw AppError.forbidden("Access forbidden: You do not have permissions to modify this invoice", "INSUFFICIENT_PERMISSIONS");
   }
 
   const updatedInvoice = await db.transaction(async (tx) => {
@@ -137,7 +159,11 @@ export const updateInvoice = asyncHandler(async (req: Request, res: Response) =>
 
   // Invalidate Redis cache
   try {
-    await redisClient.del("invoices:all");
+    await redisClient.del("invoices:all:admin");
+    await redisClient.del(`invoices:all:${user.id}`);
+    if (existing.createdBy) {
+      await redisClient.del(`invoices:all:${existing.createdBy}`);
+    }
   } catch (redisError) {
     console.error("Redis clear error in updateInvoice:", redisError);
   }
@@ -147,17 +173,27 @@ export const updateInvoice = asyncHandler(async (req: Request, res: Response) =>
 
 export const deleteInvoice = asyncHandler(async (req: Request, res: Response) => {
   const id = req.params.id as string;
+  const user = req.user!;
 
   const [existing] = await db.select().from(invoices).where(eq(invoices.id, id));
   if (!existing) {
     throw AppError.notFound(`Invoice with ID ${id} not found`, 'INVOICE_NOT_FOUND');
   }
 
+  // Deletes are Admin-only under standard routing, but verify ownership/role for extra layer of defense
+  if (user.role !== "Admin" && existing.createdBy !== user.id) {
+    throw AppError.forbidden("Access forbidden: You do not have permissions to delete this invoice", "INSUFFICIENT_PERMISSIONS");
+  }
+
   await db.delete(invoices).where(eq(invoices.id, id)); // CASCADE handles deleting items!
 
   // Invalidate Redis cache
   try {
-    await redisClient.del("invoices:all");
+    await redisClient.del("invoices:all:admin");
+    await redisClient.del(`invoices:all:${user.id}`);
+    if (existing.createdBy) {
+      await redisClient.del(`invoices:all:${existing.createdBy}`);
+    }
   } catch (redisError) {
     console.error("Redis clear error in deleteInvoice:", redisError);
   }
